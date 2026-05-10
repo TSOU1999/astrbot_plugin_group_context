@@ -84,5 +84,20 @@
     "type": "int",
     "description": "私聊场景控制携带图片的轮数，只保留最后N轮用户消息中的图片",
     "default": 2
+  },
+  "empty_mention_strategy": {
+    "type": "string",
+    "description": "空@（纯@）消息的处理策略\n可选值: none (不处理), high_priority_handler (高优先级拦截，推荐), post_cleanup (事后清理，注意：直接操作全局状态，可能随框架更新失效或引发异常)",
+    "default": "high_priority_handler"
+  },
+  "empty_mention_prompt": {
+    "type": "string",
+    "description": "空@消息被拦截时的替换提示词（仅在 high_priority_handler 策略下生效）",
+    "default": "[用户@了你，请根据群聊上文进行回复]"
+  },
+  "empty_mention_prompt_style": {
+    "type": "string",
+    "description": "空@提示词的注入方式（仅在 high_priority_handler 策略下生效）\n可选值: append (在原@之上添加), replace (彻底替换为提示词)",
+    "default": "append"
   }
 }

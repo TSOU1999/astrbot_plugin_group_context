@@ -13,6 +13,7 @@ from astrbot.api.message_components import At, Image, Plain, Forward, Reply
 from astrbot.api.platform import MessageType
 import astrbot.api.message_components as Comp
 from astrbot.core.utils.io import download_image_by_url
+from astrbot.core.utils import session_waiter as sw
 
 try:
     from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
@@ -58,6 +59,11 @@ class GroupContextPlugin(Star):
         self.enable_command_filter = bool(self.get_cfg("enable_command_filter", True))
         self.command_prefixes = self.get_cfg("command_prefixes", ["/"])
 
+        # 空@处理策略配置
+        self.strategy = self.get_cfg("empty_mention_strategy", "high_priority_handler")
+        self.empty_mention_prompt = self.get_cfg("empty_mention_prompt", "[用户@了你，请根据群聊上文进行回复]")
+        self.empty_mention_prompt_style = self.get_cfg("empty_mention_prompt_style", "append")
+
         logger.info("群聊上下文感知插件已初始化")
         logger.info(f"合并转发分析: {'已启用' if self.enable_forward_analysis else '已禁用'}")
         logger.info(f"图片识别: {'已启用' if self.enable_image_recognition else '已禁用'}")
@@ -69,9 +75,30 @@ class GroupContextPlugin(Star):
             logger.info(f"私聊对话轮数: {self.private_conversation_rounds_limit}")
             logger.info(f"私聊图片携带轮数: {self.private_image_carry_rounds}")
 
+        # 打印空@处理策略
+        if self.strategy == "none":
+            logger.info("[empty_mention] 策略=none，将完全使用框架默认的60秒waiter行为")
+        elif self.strategy == "high_priority_handler":
+            logger.info(f"[empty_mention] 策略=high_priority_handler，注入方式={self.empty_mention_prompt_style}")
+        elif self.strategy == "post_cleanup":
+            logger.warning("[empty_mention] 策略=post_cleanup，依赖框架内部全局变量 USER_SESSIONS，可能有极端竞态问题")
+        else:
+            logger.error(f"[empty_mention] 未知策略: {self.strategy}，将回退到 none 行为")
+            self.strategy = "none"
+
     def get_cfg(self, key: str, default=None):
         """从插件配置中获取配置项"""
         return self.config.get(key, default)
+
+    def _is_pure_mention(self, event: AstrMessageEvent) -> bool:
+        """判断是否为针对机器人的纯@消息：确实是被唤醒/被@了，且文本内容为空"""
+        if not event.is_at_or_wake_command:
+            return False
+        return not (event.message_str or "").strip()
+
+    def _has_context_ready(self, event: AstrMessageEvent) -> bool:
+        """判断当前会话是否有就绪的上下文"""
+        return len(self.session_chats.get(event.unified_msg_origin, [])) > 0
 
     def is_command(self, message: str) -> bool:
         """检测是否为指令消息"""
@@ -739,6 +766,58 @@ class GroupContextPlugin(Star):
         req = event.get_extra("provider_request")
         if req is not None:
             req.prompt = ""
+
+
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=9999)
+    async def _intercept_empty_mention(self, event: AstrMessageEvent):
+        """高优先级拦截器：针对纯@消息提前注入提示词，防止触发 60 秒等待"""
+        if self.strategy != "high_priority_handler":
+            return
+        
+        # 仅在群聊生效
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            return
+            
+        if not self._is_pure_mention(event):
+            return
+            
+        if not self._has_context_ready(event):
+            return
+            
+        # 根据配置决定注入方式
+        prompt = self.empty_mention_prompt
+        
+        if self.empty_mention_prompt_style == "replace":
+            event.message_obj.message = [Comp.Plain(prompt)]
+            event.message_str = prompt
+        else:
+            # 默认是 append，保留原来的 @，追加提示词
+            event.message_obj.message.append(Comp.Plain(prompt))
+            event.message_str = f"{event.message_str} {prompt}".strip()
+            
+        logger.debug(f"[empty_mention] 已拦截纯@并注入提示词，session={event.unified_msg_origin}, style={self.empty_mention_prompt_style}")
+
+    @filter.on_llm_response(priority=999)
+    async def _cleanup_after_response(self, event: AstrMessageEvent, resp: LLMResponse):
+        """事后清理机制：LLM 回复后立刻移除多余的 session_waiter"""
+        if self.strategy != "post_cleanup":
+            return
+            
+        if event.get_message_type() != MessageType.GROUP_MESSAGE:
+            return
+            
+        if not self._is_pure_mention(event):
+            return
+            
+        session_id = event.unified_msg_origin
+        removed = sw.USER_SESSIONS.pop(session_id, None)
+        if removed is not None:
+            logger.info(f"[empty_mention] 已清理框架注册的 session_waiter，session={session_id}")
+            try:
+                sw.FILTERS.remove(removed.session_filter)
+            except ValueError:
+                pass
+            removed.session_controller.stop()
 
 
     async def terminate(self):
