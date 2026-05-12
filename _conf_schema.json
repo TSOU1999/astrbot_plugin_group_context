@@ -50,7 +50,7 @@
         "type": "int",
         "description": "超时时间",
         "hint": "后台请求转述的超时时间(秒)。超时后将降级放弃注入。",
-        "default": 10
+        "default": 30
       }
     }
   },

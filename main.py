@@ -53,7 +53,7 @@ class GroupContextPlugin(Star):
         self.image_caption_provider_id = caption_settings.get("provider_id", "")
         self.image_caption_prompt = caption_settings.get("prompt", "请描述这张图片的内容")
         self.caption_interim_message = caption_settings.get("interim_message", "我在看图，稍等一下～")
-        self.caption_timeout = int(caption_settings.get("timeout", 10))
+        self.caption_timeout = int(caption_settings.get("timeout", 30))
 
         self.active_reply_prompt = self.get_cfg("active_reply_prompt", "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it. Only output your response and do not output any other information.")
         self.normal_reply_prompt = self.get_cfg("normal_reply_prompt", "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it.")
@@ -275,7 +275,15 @@ class GroupContextPlugin(Star):
         # 推送临时消息(给用户立刻的反馈)
         if self.caption_interim_message:
             try:
-                await event.send(event.plain_result(self.caption_interim_message))
+                if IS_AIOCQHTTP and isinstance(event, AiocqhttpMessageEvent):
+                    group_id = event.message_obj.group_id
+                    await event.bot.api.call_action(
+                        'send_group_msg',
+                        group_id=int(group_id),
+                        message=self.caption_interim_message
+                    )
+                else:
+                    logger.debug("[quote_caption] 非 aiocqhttp 平台，跳过临时消息推送")
             except Exception as e:
                 logger.warning(f"[quote_caption] 推送临时消息失败: {e}")
 
@@ -574,7 +582,7 @@ class GroupContextPlugin(Star):
         # 使用 __init__ 中读取的转述提示词
         image_caption_prompt = self.image_caption_prompt
 
-        logger.info(f"发起图片转述请求 | provider: {provider.id} | url: {image_url}")
+        logger.info(f"发起图片转述请求 | provider_id: {image_caption_provider_id or '(default)'} | url: {image_url[:80]}...")
 
         response = await provider.text_chat(
             prompt=image_caption_prompt,
@@ -786,7 +794,7 @@ class GroupContextPlugin(Star):
                         }
                     ],
                 })
-                logger.info(f"[quote_caption] 已成功收割并注入图片 Caption session={event.unified_msg_origin}")
+                logger.info(f"[quote_caption] 后台转述收割并注入成功，准备请求主 LLM | session={event.unified_msg_origin}")
             except asyncio.TimeoutError:
                 logger.warning(f"[quote_caption] 图片转述超时({self.caption_timeout}s)，跳过注入 session={event.unified_msg_origin}")
             except Exception as e:
