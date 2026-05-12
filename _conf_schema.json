@@ -9,20 +9,42 @@
     "description": "控制携带图片的轮数，只保留最后N轮用户消息中的图片，将前面的图片转换为[图片]占位符，用于节省请求token",
     "default": 2
   },
-  "image_caption": {
+  "economy_mode": {
     "type": "bool",
-    "description": "是否启用图片描述功能（需先启用图片识别。适用于聊天大模型无法进行图片识别的场景）\n描述图片的效果不如原生图片识别，建议仅在无法使用图片识别的聊天大模型时开启",
+    "description": "省流模式（看图只看关键图）。开启后，仅处理附带在@bot或被引用(Quote)中的重点图片，其余日常聊天配图一律用纯文本[图片]占位。推荐开启以节省 Token 和避免跨消息竞态卡顿。",
     "default": false
   },
-  "image_caption_prompt": {
-    "type": "string",
-    "description": "图片描述提示词",
-    "default": "请描述这张图片的内容"
+  "image_caption": {
+    "type": "bool",
+    "description": "是否使用大模型【转述描述(Caption)模式】。关闭则使用原生【Base64 URL注入模式】",
+    "default": false
   },
-  "image_caption_provider_id": {
-    "type": "string",
-    "description": "用于图片描述的 Provider ID (留空则使用当前正在使用的 Provider)",
-    "default": ""
+  "caption_settings": {
+    "description": "转述(Caption)模式配置",
+    "type": "object",
+    "hint": "开启大模型转述模式后，以下配置生效。",
+    "items": {
+      "provider_id": {
+        "type": "string",
+        "description": "专门用于看图的 Provider ID（留空则使用当前回复的主模型）",
+        "default": ""
+      },
+      "prompt": {
+        "type": "string",
+        "description": "让模型看图时的提示词",
+        "default": "请描述这张图片的内容"
+      },
+      "interim_message": {
+        "type": "string",
+        "description": "显式要求看图时，发送的临时安抚消息（省流模式下有效）",
+        "default": "我在看图，稍等一下～"
+      },
+      "timeout": {
+        "type": "int",
+        "description": "后台请求转述的超时时间(秒)。超时后将降级放弃注入",
+        "default": 10
+      }
+    }
   },
   "enable_forward_analysis": {
     "type": "bool",

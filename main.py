@@ -2,6 +2,7 @@ import datetime
 import random
 import traceback
 import uuid
+import asyncio
 from collections import defaultdict
 from typing import Optional, List, Tuple
 
@@ -43,9 +44,16 @@ class GroupContextPlugin(Star):
 
         # 图片处理相关配置
         self.enable_image_recognition = bool(self.get_cfg("enable_image_recognition", True))
+        self.image_carry_rounds = int(self.get_cfg("image_carry_rounds", 2))
+        self.economy_mode = bool(self.get_cfg("economy_mode", False))
         self.image_caption = bool(self.get_cfg("image_caption", False))
-        self.image_caption_provider_id = self.get_cfg("image_caption_provider_id", "")
-        self.image_carry_rounds = int(self.get_cfg("image_carry_rounds", 1))
+        
+        # 转述(Caption)模式专属配置
+        caption_settings = self.get_cfg("caption_settings", {})
+        self.image_caption_provider_id = caption_settings.get("provider_id", "")
+        self.image_caption_prompt = caption_settings.get("prompt", "请描述这张图片的内容")
+        self.caption_interim_message = caption_settings.get("interim_message", "我在看图，稍等一下～")
+        self.caption_timeout = int(caption_settings.get("timeout", 10))
 
         self.active_reply_prompt = self.get_cfg("active_reply_prompt", "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it. Only output your response and do not output any other information.")
         self.normal_reply_prompt = self.get_cfg("normal_reply_prompt", "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it.")
@@ -73,7 +81,8 @@ class GroupContextPlugin(Star):
         logger.info(f"合并转发分析: {'已启用' if self.enable_forward_analysis else '已禁用'}")
         logger.info(f"图片识别: {'已启用' if self.enable_image_recognition else '已禁用'}")
         if self.enable_image_recognition:
-            logger.info(f"图片处理模式: {'转述描述' if self.image_caption else 'URL注入'}")
+            logger.info(f"省流模式(看图): {'已启用' if self.economy_mode else '已关闭'}")
+            logger.info(f"图片处理模式: {'转述描述(Caption)' if self.image_caption else '原生注入(URL)'}")
             logger.info(f"图片携带轮数: {self.image_carry_rounds}")
         logger.info(f"私聊控制: {'已启用' if self.enable_private_control else '已禁用'}")
         if self.enable_private_control:
@@ -242,6 +251,41 @@ class GroupContextPlugin(Star):
             logger.error(traceback.format_exc())
             return "", []
 
+    async def _process_focused_images(self, event: AstrMessageEvent):
+        """检测消息中的重点关注图片，并以后台任务形式发起转述。"""
+        focused_images = []
+
+        # 1. 扫 Reply.chain 里的 Image 组件
+        for comp in event.message_obj.message:
+            if isinstance(comp, Reply) and comp.chain:
+                focused_images.extend([c for c in comp.chain if isinstance(c, Image)])
+                break
+                
+        # 2. 扫当前消息链里的 Image 组件
+        focused_images.extend([c for c in event.message_obj.message if isinstance(c, Image)])
+        
+        if not focused_images:
+            return
+
+        # 初版只取第一张图
+        url = self._extract_image_url(focused_images[0])
+        if not url:
+            return
+
+        # 推送临时消息(给用户立刻的反馈)
+        if self.caption_interim_message:
+            try:
+                await event.send(event.plain_result(self.caption_interim_message))
+            except Exception as e:
+                logger.warning(f"[quote_caption] 推送临时消息失败: {e}")
+
+        # 将耗时的转述 API 包装为后台 Task，不阻塞当前 Pipeline
+        provider_id = self.image_caption_provider_id
+        task = asyncio.create_task(self.get_image_caption(url, provider_id))
+        
+        # 挂载 Task 到 event 生命周期内
+        event.set_extra("caption_task", task)
+
     @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
     async def on_message(self, event: AstrMessageEvent):
         """处理群聊消息并支持主动回复"""
@@ -259,6 +303,13 @@ class GroupContextPlugin(Star):
         if self.is_command(message_text):
             logger.debug(f"群聊上下文 | {event.unified_msg_origin} | 检测到指令消息，已过滤")
             return
+
+        # 重点图片转述 (必须在开启总开关、开启省流模式、开启大模型转述模式且被明确唤醒时才触发，避免重复转述)
+        if self.enable_image_recognition and self.economy_mode and self.image_caption and event.is_at_or_wake_command:
+            try:
+                await self._process_focused_images(event)
+            except Exception as e:
+                logger.error(f"[quote_caption] _process_focused_images 异常: {e}")
 
         # 检查是否有文本、图片或合并转发内容
         has_valid_content = False
@@ -381,7 +432,7 @@ class GroupContextPlugin(Star):
                                     elif seg_type == "image":
                                         img_url = self._extract_image_url(seg_data)
                                         if img_url:
-                                            if self.enable_image_recognition:
+                                            if self.enable_image_recognition and not self.economy_mode:
                                                 if self.image_caption:
                                                     try:
                                                         caption = await self.get_image_caption(img_url, self.image_caption_provider_id)
@@ -403,7 +454,7 @@ class GroupContextPlugin(Star):
                                                         # 如果转换失败，使用[图片]占位符
                                                         full_text += " [图片]"
                                             else:
-                                                # 关闭视觉开关时，使用[图片]占位符，不换行
+                                                # 关闭视觉开关或处于省流模式时，使用[图片]占位符，不换行
                                                 full_text += " [图片]"
                             
                             # 添加换行
@@ -432,7 +483,7 @@ class GroupContextPlugin(Star):
             elif isinstance(comp, Image):
                 url = self._extract_image_url(comp)
                 if url:
-                    if self.enable_image_recognition:
+                    if self.enable_image_recognition and not self.economy_mode:
                         if self.image_caption:
                             try:
                                 caption = await self.get_image_caption(url, self.image_caption_provider_id)
@@ -455,7 +506,7 @@ class GroupContextPlugin(Star):
                                 # 如果转换失败，使用[图片]占位符
                                 full_text += " [图片]"
                     else:
-                        # 关闭视觉开关时，使用[图片]占位符，保持在同一行
+                        # 关闭视觉开关或处于省流模式时，使用[图片]占位符，保持在同一行
                         full_text += " [图片]"
             elif isinstance(comp, Forward):
                 # 合并转发消息已在前面处理
@@ -520,8 +571,8 @@ class GroupContextPlugin(Star):
         if not isinstance(provider, Provider):
             raise Exception(f"提供商类型错误({type(provider)}),无法获取图片描述")
 
-        # 从全局配置获取图片描述提示词
-        image_caption_prompt = self.get_cfg("image_caption_prompt", "请描述这张图片的内容")
+        # 使用 __init__ 中读取的转述提示词
+        image_caption_prompt = self.image_caption_prompt
 
         logger.info(f"发起图片转述请求 | provider: {provider.id} | url: {image_url}")
 
@@ -720,6 +771,27 @@ class GroupContextPlugin(Star):
         # 将用户消息添加到上下文
         req.contexts.append(user_message)
         
+        # 收割后台启动的重点图片转述任务
+        caption_task = event.get_extra("caption_task")
+        if caption_task:
+            try:
+                # 带超时的等待，防止 Vision API 假死拖垮机器人
+                caption = await asyncio.wait_for(caption_task, timeout=float(self.caption_timeout))
+                req.contexts.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"<Focused Image Caption>\n{caption}\n</Focused Image Caption>",
+                        }
+                    ],
+                })
+                logger.info(f"[quote_caption] 已成功收割并注入图片 Caption session={event.unified_msg_origin}")
+            except asyncio.TimeoutError:
+                logger.warning(f"[quote_caption] 图片转述超时({self.caption_timeout}s)，跳过注入 session={event.unified_msg_origin}")
+            except Exception as e:
+                logger.error(f"[quote_caption] 图片转述收割失败: {e}")
+
         # 清空该会话的历史记录，只保留上一次请求过后的群聊消息
         self.session_chats[event.unified_msg_origin].clear()
 
