@@ -85,19 +85,37 @@
     "description": "私聊场景控制携带图片的轮数，只保留最后N轮用户消息中的图片",
     "default": 2
   },
-  "empty_mention_strategy": {
-    "type": "string",
-    "description": "空@（纯@）消息的处理策略\n可选值: none (不处理), high_priority_handler (高优先级拦截，推荐), post_cleanup (事后清理，注意：直接操作全局状态，可能随框架更新失效或引发异常)",
-    "default": "high_priority_handler"
-  },
-  "empty_mention_prompt": {
-    "type": "string",
-    "description": "空@消息被拦截时的替换提示词（仅在 high_priority_handler 策略下生效）",
-    "default": "[用户@了你，请根据群聊上文进行回复]"
-  },
-  "empty_mention_prompt_style": {
-    "type": "string",
-    "description": "空@提示词的注入方式（仅在 high_priority_handler 策略下生效）\n可选值: append (在原@之上添加), replace (彻底替换为提示词)",
-    "default": "append"
+  "empty_mention_settings": {
+    "description": "空@处理策略",
+    "type": "object",
+    "hint": "处理纯@机器人但不带文本的消息。",
+    "items": {
+      "enable_empty_mention_handle": {
+        "description": "是否处理Astrbot框架“纯@”触发等待逻辑",
+        "hint": "关闭则保留框架默认60秒等待行为。",
+        "type": "bool",
+        "default": true
+      },
+      "empty_mention_strategy": {
+        "description": "处理策略",
+        "hint": "开启拦截后生效。post_cleanup 策略会直接操作全局状态，可能随框架更新失效或引发异常，不推荐。",
+        "type": "string",
+        "options": ["high_priority_handler", "post_cleanup"],
+        "default": "high_priority_handler"
+      },
+      "empty_mention_prompt": {
+        "description": "替换提示词",
+        "hint": "high_priority_handler 策略下生效。",
+        "type": "string",
+        "default": "[用户@了你，请根据群聊上文进行回复]"
+      },
+      "empty_mention_prompt_style": {
+        "description": "提示词注入方式",
+        "hint": "high_priority_handler 策略下生效。append (在原@之上添加) 或 replace (彻底替换为提示词)",
+        "type": "string",
+        "options": ["append", "replace"],
+        "default": "append"
+      }
+    }
   }
 }

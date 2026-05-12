@@ -60,9 +60,14 @@ class GroupContextPlugin(Star):
         self.command_prefixes = self.get_cfg("command_prefixes", ["/"])
 
         # 空@处理策略配置
-        self.strategy = self.get_cfg("empty_mention_strategy", "high_priority_handler")
-        self.empty_mention_prompt = self.get_cfg("empty_mention_prompt", "[用户@了你，请根据群聊上文进行回复]")
-        self.empty_mention_prompt_style = self.get_cfg("empty_mention_prompt_style", "append")
+        em_settings = self.get_cfg("empty_mention_settings", {})
+        self.enable_empty_mention_handle = em_settings.get("enable_empty_mention_handle", True)
+        self.strategy = em_settings.get("empty_mention_strategy", "high_priority_handler")
+        self.empty_mention_prompt = em_settings.get("empty_mention_prompt", "[用户@了你，请根据群聊上文进行回复]")
+        self.empty_mention_prompt_style = em_settings.get("empty_mention_prompt_style", "append")
+
+        if not self.enable_empty_mention_handle:
+            self.strategy = "none"
 
         logger.info("群聊上下文感知插件已初始化")
         logger.info(f"合并转发分析: {'已启用' if self.enable_forward_analysis else '已禁用'}")
@@ -517,6 +522,8 @@ class GroupContextPlugin(Star):
 
         # 从全局配置获取图片描述提示词
         image_caption_prompt = self.get_cfg("image_caption_prompt", "请描述这张图片的内容")
+
+        logger.info(f"发起图片转述请求 | provider: {provider.id} | url: {image_url}")
 
         response = await provider.text_chat(
             prompt=image_caption_prompt,
