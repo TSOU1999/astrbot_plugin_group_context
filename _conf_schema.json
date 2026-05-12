@@ -1,22 +1,26 @@
 {
   "enable_image_recognition": {
     "type": "bool",
-    "description": "是否启用群聊图片识别（关闭后完全忽略所有图片，包括合并转发中的图片）",
+    "description": "启用图片识别",
+    "hint": "关闭后完全忽略所有图片，包括合并转发中的图片。",
     "default": false
   },
   "image_carry_rounds": {
     "type": "int",
-    "description": "控制携带图片的轮数，只保留最后N轮用户消息中的图片，将前面的图片转换为[图片]占位符，用于节省请求token",
+    "description": "图片携带轮数",
+    "hint": "只保留最后N轮用户消息中的图片，将前面的图片转换为[图片]占位符，用于节省请求token。",
     "default": 2
   },
   "economy_mode": {
     "type": "bool",
-    "description": "省流模式（看图只看关键图）。开启后，仅处理附带在@bot或被引用(Quote)中的重点图片，其余日常聊天配图一律用纯文本[图片]占位。推荐开启以节省 Token 和避免跨消息竞态卡顿。",
+    "description": "省流模式",
+    "hint": "开启后，仅处理附带在@bot或被引用(Quote)中的重点图片，其余日常聊天配图一律用纯文本[图片]占位。推荐开启以节省 Token 和避免跨消息竞态卡顿。",
     "default": false
   },
   "image_caption": {
     "type": "bool",
-    "description": "是否使用大模型【转述描述(Caption)模式】。关闭则使用原生【Base64 URL注入模式】",
+    "description": "转述描述(Caption)模式",
+    "hint": "开启则使用大模型转述模式；关闭则使用原生 Base64 URL 注入模式。",
     "default": false
   },
   "caption_settings": {
@@ -26,85 +30,102 @@
     "items": {
       "provider_id": {
         "type": "string",
-        "description": "专门用于看图的 Provider ID（留空则使用当前回复的主模型）",
+        "description": "转述模型 Provider ID",
+        "hint": "专门用于看图的模型ID。留空则使用当前回复的主模型。",
         "default": ""
       },
       "prompt": {
         "type": "string",
-        "description": "让模型看图时的提示词",
+        "description": "转述提示词",
+        "hint": "让模型看图时的提示词。",
         "default": "请描述这张图片的内容"
       },
       "interim_message": {
         "type": "string",
-        "description": "显式要求看图时，发送的临时安抚消息（省流模式下有效）",
+        "description": "安抚消息",
+        "hint": "显式要求看图时，发送的临时安抚消息（省流模式下有效）。",
         "default": "我在看图，稍等一下～"
       },
       "timeout": {
         "type": "int",
-        "description": "后台请求转述的超时时间(秒)。超时后将降级放弃注入",
+        "description": "超时时间",
+        "hint": "后台请求转述的超时时间(秒)。超时后将降级放弃注入。",
         "default": 10
       }
     }
   },
   "enable_forward_analysis": {
     "type": "bool",
-    "description": "是否启用QQ合并转发消息分析（仅aiocqhttp平台，支持直接发送或回复引用）",
+    "description": "合并转发分析",
+    "hint": "是否启用QQ合并转发消息分析（仅aiocqhttp平台，支持直接发送或回复引用）。",
     "default": true
   },
   "enable_active_reply": {
     "type": "bool",
-    "description": "是否启用主动回复功能",
+    "description": "启用主动回复",
+    "hint": "是否启用机器人的概率性主动回复功能。",
     "default": false
   },
-  
   "ar_possibility": {
     "type": "float",
-    "description": "主动回复概率 (0.0-1.0)",
+    "description": "主动回复概率",
+    "hint": "触发主动回复的几率，范围 0.0 - 1.0。",
     "default": 0.1
   },
   "active_reply_prompt": {
     "type": "string",
-    "description": "主动回复提示词文本",
+    "description": "主动回复提示词",
+    "hint": "触发主动回复时大模型的角色定位或行为约束。",
     "default": "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it. Only output your response and do not output any other information."
   },
   "normal_reply_prompt": {
     "type": "string",
-    "description": "非主动回复提示词文本",
-    "default": "You are now in a chatroom. The chat history is as above. Now, new messages are coming."
+    "description": "非主动回复提示词",
+    "hint": "常规回复时大模型的角色定位或行为约束。",
+    "default": "You are now in a chatroom. The chat history is as above. Now, new messages are coming. Please react to it."
   },
   "conversation_rounds_limit": {
     "type": "int",
-    "description": "保留的user/assistant对话轮数",
+    "description": "群聊对话轮数",
+    "hint": "保留的 user/assistant 群聊对话轮数限制。",
     "default": 6
   },
   "ar_whitelist": {
     "type": "list",
-    "description": "主动回复白名单 (群号或用户ID列表,留空表示不限制)",
+    "description": "主动回复白名单",
+    "hint": "群号或用户ID列表，留空表示不限制。",
     "default": []
   },
   "enable_command_filter": {
     "type": "bool",
-    "description": "是否启用群聊指令消息过滤（以指定前缀开头的消息将被忽略）",
+    "description": "指令消息过滤",
+    "hint": "以指定前缀开头的消息将被忽略，不计入上下文。",
     "default": true
   },
   "command_prefixes": {
     "type": "list",
-    "description": "指令消息前缀列表",
-    "default": ["/"]
+    "description": "指令消息前缀",
+    "hint": "配合指令过滤使用的前缀列表。",
+    "default": [
+      "/"
+    ]
   },
-    "enable_private_control": {
+  "enable_private_control": {
     "type": "bool",
-    "description": "是否启用私聊场景会话控制功能",
+    "description": "启用私聊控制",
+    "hint": "是否启用私聊场景下的会话轮数控制功能。",
     "default": false
   },
   "private_conversation_rounds_limit": {
     "type": "int",
-    "description": "私聊场景保留的user/assistant对话轮数",
+    "description": "私聊对话轮数",
+    "hint": "私聊场景保留的 user/assistant 对话轮数。",
     "default": 10
   },
   "private_image_carry_rounds": {
     "type": "int",
-    "description": "私聊场景控制携带图片的轮数，只保留最后N轮用户消息中的图片",
+    "description": "私聊图片携带轮数",
+    "hint": "私聊场景控制携带图片的轮数，只保留最后N轮用户消息中的图片。",
     "default": 2
   },
   "empty_mention_settings": {
@@ -113,8 +134,8 @@
     "hint": "处理纯@机器人但不带文本的消息。",
     "items": {
       "enable_empty_mention_handle": {
-        "description": "是否处理Astrbot框架“纯@”触发等待逻辑",
-        "hint": "关闭则保留框架默认60秒等待行为。",
+        "description": "处理空@事件",
+        "hint": "是否拦截并处理 Astrbot 框架“纯@”触发等待逻辑，关闭则保留框架默认60秒等待行为。",
         "type": "bool",
         "default": true
       },
@@ -122,7 +143,10 @@
         "description": "处理策略",
         "hint": "开启拦截后生效。post_cleanup 策略会直接操作全局状态，可能随框架更新失效或引发异常，不推荐。",
         "type": "string",
-        "options": ["high_priority_handler", "post_cleanup"],
+        "options": [
+          "high_priority_handler",
+          "post_cleanup"
+        ],
         "default": "high_priority_handler"
       },
       "empty_mention_prompt": {
@@ -135,7 +159,10 @@
         "description": "提示词注入方式",
         "hint": "high_priority_handler 策略下生效。append (在原@之上添加) 或 replace (彻底替换为提示词)",
         "type": "string",
-        "options": ["append", "replace"],
+        "options": [
+          "append",
+          "replace"
+        ],
         "default": "append"
       }
     }
