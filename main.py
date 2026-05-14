@@ -130,7 +130,7 @@ class GroupContextPlugin(Star):
             logger.error(f"加载群成员称呼表失败: {e}")
             return {}
 
-    def _build_group_aliases_block(self, session_id: str) -> str:
+    def _build_group_aliases_block(self, session_id: str, current_user_id: str = None) -> str:
         """根据当前会话构造 <preferred_nickname> 标签内容；无配置返回空串"""
         group_members = self.member_names.get(session_id, {})
         if not group_members:
@@ -141,7 +141,12 @@ class GroupContextPlugin(Star):
             if isinstance(names, str):
                 names_list = [names]
             elif isinstance(names, list):
-                names_list = [str(n) for n in names if n]
+                names_list = []
+                for n in names:
+                    if n:
+                        names_list.append(str(n))
+                    else:
+                        logger.warning(f"[aliases] 群 {session_id} 成员 {qq} 的别名列表中存在空值或 null，已跳过。")
             else:
                 continue
             if not names_list:
@@ -149,9 +154,27 @@ class GroupContextPlugin(Star):
             lines.append(f"{'/'.join(names_list)}(QQ:{qq})")
         if not lines:
             return ""
+            
+        # 当前发言者的首选称呼
+        current_hint = ""
+        if current_user_id:
+            entry = group_members.get(str(current_user_id))
+            if entry:
+                preferred = None
+                if isinstance(entry, str):
+                    preferred = entry
+                elif isinstance(entry, list):
+                    for n in entry:
+                        if n:
+                            preferred = str(n)
+                            break
+                if preferred:
+                    current_hint = f"当前唤醒你的群友应该被称呼为“{preferred}”。\n"
+
         body = "\n".join(lines)
         return (
             "<preferred_nickname>\n"
+            f"{current_hint}"
             "（以下是本群部分成员的固定称呼对照表。斜杠分隔同一人的多个曾用名/别名，请你在回复时，优先使用列表中的第一个名称来称呼对应的群友）\n"
             f"{body}\n"
             "</preferred_nickname>"
@@ -770,7 +793,8 @@ class GroupContextPlugin(Star):
         
         # 注入群成员固定称呼对照表
         if getattr(self, "enable_preferred_nickname", False) and event.get_message_type() == MessageType.GROUP_MESSAGE:
-            aliases_block = self._build_group_aliases_block(event.unified_msg_origin)
+            current_user_id = str(event.get_sender_id()) if event.is_at_or_wake_command else None
+            aliases_block = self._build_group_aliases_block(event.unified_msg_origin, current_user_id)
             if aliases_block:
                 injected = False
                 for ctx in req.contexts:
