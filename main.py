@@ -785,7 +785,17 @@ class GroupContextPlugin(Star):
                                     injected = True
                                     break
                 if not injected:
-                    logger.warning(f"未能将称呼对照表注入上下文，可能是因为未找到 <system_reminder>。session={event.unified_msg_origin}")
+                    if req.contexts:
+                        # contexts 有内容但没找到 system_reminder，说明框架格式可能变动
+                        logger.warning(f"[aliases] 未找到 <system_reminder>，已通过 System 消息兜底注入。session={event.unified_msg_origin}")
+                    else:
+                        # 首轮会话空 contexts，正常的预期兜底行为
+                        logger.debug(f"[aliases] 首轮会话上下文为空，已通过 System 消息起始注入。session={event.unified_msg_origin}")
+                    
+                    req.contexts.insert(0, {
+                        "role": "system",
+                        "content": aliases_block
+                    })
 
         if event.unified_msg_origin not in self.session_chats:
             return
