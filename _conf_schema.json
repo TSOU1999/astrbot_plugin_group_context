@@ -128,6 +128,12 @@
     "hint": "私聊场景控制携带图片的轮数，只保留最后N轮用户消息中的图片。",
     "default": 2
   },
+  "enable_preferred_nickname": {
+    "type": "bool",
+    "description": "开启群员惯用称呼注入功能",
+    "hint": "开启后，将从 data/plugin_data/astrbot_plugin_group_context/member_names.json 读取惯用名表并强制注入给大模型。",
+    "default": true
+  },
   "empty_mention_settings": {
     "description": "空@处理策略",
     "type": "object",

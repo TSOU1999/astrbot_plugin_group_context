@@ -3,6 +3,8 @@ import random
 import traceback
 import uuid
 import asyncio
+import json
+import os
 from collections import defaultdict
 from typing import Optional, List, Tuple
 
@@ -43,7 +45,7 @@ class GroupContextPlugin(Star):
         self.forward_prefix = "【合并转发内容】"
 
         # 图片处理相关配置
-        self.enable_image_recognition = bool(self.get_cfg("enable_image_recognition", True))
+        self.enable_image_recognition = bool(self.get_cfg("enable_image_recognition", False))
         self.image_carry_rounds = int(self.get_cfg("image_carry_rounds", 2))
         self.economy_mode = bool(self.get_cfg("economy_mode", False))
         self.image_caption = bool(self.get_cfg("image_caption", False))
@@ -61,7 +63,7 @@ class GroupContextPlugin(Star):
         # 私聊场景控制配置
         self.enable_private_control = bool(self.get_cfg("enable_private_control", False))
         self.private_conversation_rounds_limit = int(self.get_cfg("private_conversation_rounds_limit", 10))
-        self.private_image_carry_rounds = int(self.get_cfg("private_image_carry_rounds", 5))
+        self.private_image_carry_rounds = int(self.get_cfg("private_image_carry_rounds", 2))
 
         # 指令消息过滤配置
         self.enable_command_filter = bool(self.get_cfg("enable_command_filter", True))
@@ -100,9 +102,60 @@ class GroupContextPlugin(Star):
             logger.error(f"[empty_mention] 未知策略: {self.strategy}，将回退到 none 行为")
             self.strategy = "none"
 
+        # 群成员称呼表
+        self.enable_preferred_nickname = bool(self.get_cfg("enable_preferred_nickname", True))
+        if self.enable_preferred_nickname:
+            self.member_names_path = os.path.join(
+                "data", "plugin_data", "astrbot_plugin_group_context", "member_names.json"
+            )
+            self.member_names = self._load_member_names()
+            logger.info(f"群成员称呼表已加载，共 {len(self.member_names)} 个群配置")
+
     def get_cfg(self, key: str, default=None):
         """从插件配置中获取配置项"""
         return self.config.get(key, default)
+
+    def _load_member_names(self) -> dict:
+        """加载群成员称呼表，文件不存在时自动创建空文件"""
+        os.makedirs(os.path.dirname(self.member_names_path), exist_ok=True)
+        if not os.path.exists(self.member_names_path):
+            with open(self.member_names_path, "w", encoding="utf-8") as f:
+                json.dump({}, f, ensure_ascii=False, indent=2)
+            logger.info(f"群成员称呼表不存在，已创建: {self.member_names_path}")
+            return {}
+        try:
+            with open(self.member_names_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"加载群成员称呼表失败: {e}")
+            return {}
+
+    def _build_group_aliases_block(self, session_id: str) -> str:
+        """根据当前会话构造 <preferred_nickname> 标签内容；无配置返回空串"""
+        group_members = self.member_names.get(session_id, {})
+        if not group_members:
+            return ""
+        lines = []
+        for qq, names in group_members.items():
+            # 兼容字符串与数组两种格式
+            if isinstance(names, str):
+                names_list = [names]
+            elif isinstance(names, list):
+                names_list = [str(n) for n in names if n]
+            else:
+                continue
+            if not names_list:
+                continue
+            lines.append(f"{'/'.join(names_list)}(QQ:{qq})")
+        if not lines:
+            return ""
+        body = "\n".join(lines)
+        return (
+            "<preferred_nickname>\n"
+            "（以下是本群部分成员的固定称呼对照表。斜杠分隔同一人的多个曾用名/别名，请你在回复时，优先使用列表中的第一个名称来称呼对应的群友）\n"
+            f"{body}\n"
+            "</preferred_nickname>"
+        )
 
     def _is_pure_mention(self, event: AstrMessageEvent) -> bool:
         """判断是否为针对机器人的纯@消息：确实是被唤醒/被@了，且文本内容为空"""
@@ -714,6 +767,26 @@ class GroupContextPlugin(Star):
     @filter.on_llm_request()
     async def on_req_llm(self, event: AstrMessageEvent, req: ProviderRequest):
         """当触发 LLM 请求前,调用此方法修改 req（群聊场景）"""
+        
+        # 注入群成员固定称呼对照表
+        if getattr(self, "enable_preferred_nickname", False) and event.get_message_type() == MessageType.GROUP_MESSAGE:
+            aliases_block = self._build_group_aliases_block(event.unified_msg_origin)
+            if aliases_block:
+                injected = False
+                for ctx in req.contexts:
+                    if injected:
+                        break
+                    if ctx.get("role") == "user":
+                        content = ctx.get("content", [])
+                        if isinstance(content, list):
+                            for part in content:
+                                if part.get("type") == "text" and "<system_reminder>" in part.get("text", ""):
+                                    part["text"] += f"\n{aliases_block}"
+                                    injected = True
+                                    break
+                if not injected:
+                    logger.warning(f"未能将称呼对照表注入上下文，可能是因为未找到 <system_reminder>。session={event.unified_msg_origin}")
+
         if event.unified_msg_origin not in self.session_chats:
             return
 
